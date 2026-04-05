@@ -115,8 +115,9 @@ public:
 
     string getFullName() const { return firstName + " " + lastName; }
     void viewAvailableCourses();
-    bool enrollInCourse(int courseId);
-    void updateProgress(int courseId, int percentage);
+    void enrollInCourse();                    // NEW: shows list first, then lets user pick ID
+    void viewMyCourses();                     // NEW: shows only courses student is enrolled in
+    bool enrollInCourse(int courseId);        // internal helper
 };
 
 int Student::_student_counter = 1;
@@ -149,7 +150,6 @@ map<int, Instructor*> Instructor::_all_instructors;
 class Course {
 public:
     static map<int, Course*> _all_courses;
-    static map<int, string> _instructorNames;  // To show instructor name
 
     int courseId;
     string courseTitle;
@@ -168,7 +168,6 @@ public:
 };
 
 map<int, Course*> Course::_all_courses;
-map<int, string> Course::_instructorNames;
 
 Course::Course(const string& title, const string& desc, const string& diff,
                int duration, const string& lang, float price, int instrId, const string& instrName) {
@@ -183,7 +182,6 @@ Course::Course(const string& title, const string& desc, const string& diff,
     instructorName = instrName;
 
     _all_courses[courseId] = this;
-    _instructorNames[courseId] = instrName;
 }
 
 void Course::display() const {
@@ -204,7 +202,7 @@ public:
     int enrollmentId;
     int studentId;
     int courseId;
-    float progressPercentage = 0;
+    float progressPercentage = 0.0f;
     string completionStatus = "Not Started";
 
     Enrollment(int sId, int cId);
@@ -247,25 +245,64 @@ void Student::viewAvailableCourses() {
         cout << "No courses available at the moment.\n";
         return;
     }
-
     cout << "\n=== Available Courses ===\n";
     for (auto& p : Course::_all_courses) {
         p.second->display();
     }
 }
 
+void Student::enrollInCourse() {
+    viewAvailableCourses();                     // ← First show all courses with IDs
+    if (Course::_all_courses.empty()) return;
+
+    cout << "\nEnter Course ID to enroll: ";
+    int cid;
+    cin >> cid;
+    cin.ignore(); // clear newline
+
+    enrollInCourse(cid);                        // internal call
+}
+
 bool Student::enrollInCourse(int courseId) {
+    // Check if course exists
     if (Course::_all_courses.find(courseId) == Course::_all_courses.end()) {
-        cout << "Course not found!\n";
+        cout << "✗ Course ID " << courseId << " not found!\n";
         return false;
     }
-    cout << "Successfully enrolled in course " << courseId << endl;
-    // TODO: Create Enrollment object
+
+    // Check if already enrolled
+    for (auto* e : enrollments) {
+        if (e->courseId == courseId) {
+            cout << "✗ You are already enrolled in this course!\n";
+            return false;
+        }
+    }
+
+    // Create and store enrollment
+    Enrollment* newEnroll = new Enrollment(studentId, courseId);
+    enrollments.push_back(newEnroll);
+
+    string title = Course::_all_courses[courseId]->courseTitle;
+    cout << "✓ Successfully enrolled in: " << title << " (ID: " << courseId << ")\n";
     return true;
 }
 
-void Student::updateProgress(int courseId, int percentage) {
-    cout << "Progress updated to " << percentage << "% for course " << courseId << endl;
+void Student::viewMyCourses() {
+    if (enrollments.empty()) {
+        cout << "You are not enrolled in any courses yet.\n";
+        return;
+    }
+
+    cout << "\n=== My Enrolled Courses ===\n";
+    for (auto* enroll : enrollments) {
+        auto it = Course::_all_courses.find(enroll->courseId);
+        if (it != Course::_all_courses.end()) {
+            it->second->display();
+            cout << "   Progress   : " << enroll->progressPercentage << "%" << endl;
+            cout << "   Status     : " << enroll->completionStatus << endl;
+            cout << string(50, '=') << endl;
+        }
+    }
 }
 
 // ========================= INSTRUCTOR IMPLEMENTATION =========================
@@ -298,26 +335,19 @@ void Instructor::createCourse() {
     float price;
 
     cout << "\n=== Create New Course ===\n";
-    cout << "Enter Course Title: "; 
-    getline(cin, title);
-    if (title.empty()) {
-        cout << "Course title cannot be empty!\n";
-        return;
-    }
+    cout << "Enter Course Title: "; getline(cin, title);
+    if (title.empty()) { cout << "Course title cannot be empty!\n"; return; }
 
     cout << "Enter Description: "; getline(cin, desc);
     cout << "Enter Difficulty (Beginner/Intermediate/Advanced): "; getline(cin, diff);
-    cout << "Enter Duration (in weeks): "; cin >> duration;
-    cin.ignore(); // clear newline
+    cout << "Enter Duration (in weeks): "; cin >> duration; cin.ignore();
     cout << "Enter Language: "; getline(cin, lang);
-    cout << "Enter Price ($): "; cin >> price;
-    cin.ignore(); // clear newline
+    cout << "Enter Price ($): "; cin >> price; cin.ignore();
 
-    // Create course with current instructor's full name
     string instrFullName = firstName + " " + lastName;
     Course* newCourse = new Course(title, desc, diff, duration, lang, price, instructorId, instrFullName);
 
-    cout << "✓ Course '" << title << "' created successfully by " << instrFullName << "!\n";
+    cout << "✓ Course '" << title << "' created successfully!\n";
 }
 
 void Instructor::viewCourses() {
@@ -325,8 +355,7 @@ void Instructor::viewCourses() {
         cout << "No courses available.\n";
         return;
     }
-
-    cout << "\n=== All Courses (Created by Instructors) ===\n";
+    cout << "\n=== All Courses ===\n";
     for (auto& p : Course::_all_courses) {
         p.second->display();
     }
@@ -336,7 +365,7 @@ void Instructor::viewCourses() {
 void initialize_sample_data() {
     User* u1 = new User("john_student", "john@email.com", "password123");
     User* u2 = new User("jane_instructor", "jane@email.com", "password123");
-    User* u3 = new User("bob_instructor", "bob@email.com", "password123");  // Extra instructor for testing
+    User* u3 = new User("bob_instructor", "bob@email.com", "password123");
 
     Student* s1 = new Student(u1->getUserId(), "John", "Doe", Date(2000,5,15), "+1234567890");
     Instructor* i1 = new Instructor(u2->getUserId(), "Jane", "Smith", "Machine Learning", "PhD");
@@ -357,7 +386,12 @@ void print_header(const string& title) {
 void student_menu(Student* student) {
     while (true) {
         print_header("STUDENT MENU - Welcome " + student->getFullName());
-        cout << "1. View Available Courses\n2. Enroll in Course\n0. Logout\nEnter choice: ";
+        cout << "1. View Available Courses\n";
+        cout << "2. Enroll in a Course\n";
+        cout << "3. View My Courses\n";
+        cout << "0. Logout\n";
+        cout << "Enter choice: ";
+
         string ch;
         getline(cin, ch);
 
@@ -369,11 +403,10 @@ void student_menu(Student* student) {
             student->viewAvailableCourses();
         }
         else if (ch == "2") {
-            int cid;
-            cout << "Enter Course ID to enroll: ";
-            cin >> cid;
-            cin.ignore();
-            student->enrollInCourse(cid);
+            student->enrollInCourse();           // shows list first, then asks for ID
+        }
+        else if (ch == "3") {
+            student->viewMyCourses();
         }
         else {
             cout << "Invalid option!\n";
@@ -427,9 +460,7 @@ void main_menu() {
                     break;
                 }
             }
-            if (!loggedIn) {
-                cout << "✗ Invalid username/email or password for Student!" << endl;
-            }
+            if (!loggedIn) cout << "✗ Invalid username/email or password for Student!\n";
         }
         else if (choice == "2") {
             string user, pass;
@@ -445,9 +476,7 @@ void main_menu() {
                     break;
                 }
             }
-            if (!loggedIn) {
-                cout << "✗ Invalid username/email or password for Instructor!" << endl;
-            }
+            if (!loggedIn) cout << "✗ Invalid username/email or password for Instructor!\n";
         }
         else if (choice == "0") {
             cout << "\nThank you for using the Learning Management System!\n";
